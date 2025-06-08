@@ -1,50 +1,53 @@
 import socket
 import ipaddress
-import concurrent.futures
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-from config import COMMON_PORTS, TIMEOUT
+import threading
+from queue import Queue
 
-def scan_ip(ip):
-    ip = str(ip)
-    open_ports = []
-    websites = []
+def scan_port(ip, port, timeout=1):
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            return True
+    except:
+        return False
 
-    for port, service in COMMON_PORTS.items():
-        try:
-            with socket.create_connection((ip, port), timeout=TIMEOUT):
-                open_ports.append({'port': port, 'service': service})
-        except:
-            continue
+def worker(ip, port_queue, results):
+    while not port_queue.empty():
+        port = port_queue.get()
+        if scan_port(ip, port):
+            results.append(port)
+        port_queue.task_done()
 
-    if any(p['port'] in [80, 443] for p in open_ports):
-        for proto in ['http', 'https']:
-            try:
-                url = f"{proto}://{ip}"
-                response = requests.get(url, timeout=2, verify=False)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                title = soup.title.string.strip() if soup.title else 'No title'
-                websites.append({'url': url, 'title': title})
-            except:
-                continue
+def scan_ports(ip, ports=range(1, 1025), threads=100):
+    port_queue = Queue()
+    for port in ports:
+        port_queue.put(port)
 
+    results = []
+    thread_list = []
+    for _ in range(threads):
+        t = threading.Thread(target=worker, args=(ip, port_queue, results))
+        t.daemon = True
+        t.start()
+        thread_list.append(t)
+
+    port_queue.join()
+    return sorted(results)
+
+def scan_ip(ip, verbose=False):
+    ip_str = str(ip)
+    open_ports = scan_ports(ip_str)
+    if verbose:
+        print(f"[✓] {ip_str} Portas abertas: {open_ports}")
     return {
-        'timestamp': datetime.utcnow().isoformat(),
-        'ip': ip,
-        'open_ports': open_ports,
-        'websites': websites
+        'ip': ip_str,
+        'responded': bool(open_ports),
+        'ports': open_ports,
     }
 
-def scan_network(ip_range):
-    network = ipaddress.ip_network(ip_range, strict=False)
+def scan_network(ip_range, verbose=False):
+    net = ipaddress.ip_network(ip_range, strict=False)
     results = []
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        futures = [executor.submit(scan_ip, ip) for ip in network.hosts()]
-        for future in concurrent.futures.as_completed(futures):
-            res = future.result()
-            if res['open_ports']:
-                results.append(res)
-
+    for ip in net.hosts():
+        results.append(scan_ip(ip, verbose))
     return results
+
