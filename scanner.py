@@ -121,6 +121,6 @@ def scan_ip(ip, verbose=False):
 def scan_network(ip_range, verbose=False):
     net = ipaddress.ip_network(ip_range, strict=False)
     results = []
-    for ip in net.hosts():
+    for ip in net:
         results.append(scan_ip(ip, verbose))
     return results
