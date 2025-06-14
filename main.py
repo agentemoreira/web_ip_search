@@ -1,6 +1,6 @@
 import argparse
 from scanner import scan_network
-from csv_writer import save_ip_csv
+from csv_writer import save_ip_csv 
 
 def main():
     parser = argparse.ArgumentParser(description="Discover web services in IP ranges")
